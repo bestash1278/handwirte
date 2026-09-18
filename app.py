@@ -1,23 +1,45 @@
-import streamlit as st
-import tensorflow as tf
-from tensorflow import keras
-import numpy as np
+import os
+
 import cv2
+import numpy as np
+import streamlit as st
+import torch
+import torch.nn as nn
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
-import os
 
 st.set_page_config(page_title="손글자 숫자 인식", layout="centered")
 st.title("✍️ 손글자 숫자 인식")
 st.markdown("마우스로 숫자를 그려보세요 (0-9)")
 
-# 모델 로드
+
+class DigitCNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.dropout = nn.Dropout(0.5)
+        self.fc = nn.Linear(64 * 5 * 5, 10)
+
+    def forward(self, x):
+        x = self.pool(torch.relu(self.conv1(x)))
+        x = self.pool(torch.relu(self.conv2(x)))
+        x = torch.flatten(x, 1)
+        x = self.dropout(x)
+        return self.fc(x)
+
+
 @st.cache_resource
 def load_model():
-    if not os.path.exists('models/mnist_model.h5'):
+    if not os.path.exists("models/mnist_model.pt"):
         st.error("❌ 모델 파일을 찾을 수 없습니다. 먼저 train_model.py를 실행하세요.")
         st.stop()
-    return keras.models.load_model('models/mnist_model.h5')
+    model = DigitCNN()
+    model.load_state_dict(torch.load("models/mnist_model.pt", map_location="cpu"))
+    model.eval()
+    return model
+
 
 model = load_model()
 
@@ -41,36 +63,34 @@ with col2:
     st.subheader("결과")
     result_placeholder = st.empty()
 
-# 예측 함수
+
 def predict_digit(image_data):
     if image_data is None:
         return None
 
-    # PIL 이미지를 numpy 배열로 변환
     img = np.array(image_data.getdata()).reshape(300, 300)
 
     # 흑백 반전 (모델은 검은 배경에 흰 숫자를 기대)
     img = 255 - img
 
-    # 28x28로 리사이즈
     img_resized = cv2.resize(img, (28, 28))
+    img_normalized = img_resized.astype("float32") / 255.0
 
-    # 0-1 정규화
-    img_normalized = img_resized.astype('float32') / 255.0
+    img_tensor = torch.from_numpy(img_normalized).unsqueeze(0).unsqueeze(0)
 
-    # 배치 차원 추가
-    img_batch = np.expand_dims(np.expand_dims(img_normalized, axis=0), axis=-1)
+    with torch.no_grad():
+        logits = model(img_tensor)[0]
+        predictions = torch.softmax(logits, dim=0).numpy()
 
-    # 예측
-    predictions = model.predict(img_batch, verbose=0)[0]
-    predicted_digit = np.argmax(predictions)
-    confidence = predictions[predicted_digit] * 100
+    predicted_digit = int(np.argmax(predictions))
+    confidence = float(predictions[predicted_digit]) * 100
 
     return predicted_digit, confidence, predictions
 
+
 # Canvas 결과 처리
 if canvas_result.image_data is not None:
-    result = predict_digit(Image.fromarray((canvas_result.image_data).astype('uint8')))
+    result = predict_digit(Image.fromarray((canvas_result.image_data).astype("uint8")).convert("L"))
 
     if result:
         digit, confidence, all_probs = result
@@ -78,13 +98,8 @@ if canvas_result.image_data is not None:
         with result_placeholder.container():
             st.metric("예측 숫자", digit, f"{confidence:.1f}% 확신도")
 
-            # 확률 차트
-            st.bar_chart({
-                "숫자": list(range(10)),
-                "확률": [f"{p*100:.1f}%" for p in all_probs]
-            })
+            st.bar_chart({str(i): float(p) for i, p in enumerate(all_probs)})
 
-            # 상세 확률 표시
             st.write("**각 숫자별 확률:**")
             for i, prob in enumerate(all_probs):
                 st.write(f"{i}: {prob*100:.2f}%")

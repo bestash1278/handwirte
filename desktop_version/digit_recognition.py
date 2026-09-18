@@ -4,52 +4,35 @@ Draw a digit (0-9) with the mouse and click Recognize.
 """
 
 import os
+import sys
 import tkinter as tk
 from tkinter import messagebox
 
 import numpy as np
+import torch
+import torch.nn as nn
 from PIL import Image, ImageDraw
-from tensorflow import keras
-from tensorflow.keras import layers
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "mnist_model.h5")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from train_model import DigitCNN  # noqa: E402
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "mnist_model.pt")
 CANVAS_SIZE = 280
 BRUSH_SIZE = 18
 
 
-def train_and_save_model(path):
-    print("Model not found. Training a new model on MNIST (this may take a few minutes)...")
-    (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
-    x_train = x_train.astype("float32") / 255.0
-    x_test = x_test.astype("float32") / 255.0
-    x_train = x_train.reshape(-1, 28, 28, 1)
-    x_test = x_test.reshape(-1, 28, 28, 1)
-
-    model = keras.Sequential([
-        layers.Conv2D(32, kernel_size=(3, 3), activation="relu", input_shape=(28, 28, 1)),
-        layers.MaxPooling2D(pool_size=(2, 2)),
-        layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
-        layers.MaxPooling2D(pool_size=(2, 2)),
-        layers.Flatten(),
-        layers.Dropout(0.5),
-        layers.Dense(10, activation="softmax"),
-    ])
-    model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
-    model.fit(x_train, y_train, batch_size=128, epochs=15, validation_split=0.1, verbose=1)
-
-    score = model.evaluate(x_test, y_test, verbose=0)
-    print(f"Test accuracy: {score[1] * 100:.2f}%")
-
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    model.save(path)
-    print(f"Model saved to {path}")
-    return model
-
-
 def load_or_train_model():
+    model = DigitCNN()
     if os.path.exists(MODEL_PATH):
-        return keras.models.load_model(MODEL_PATH)
-    return train_and_save_model(MODEL_PATH)
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+    else:
+        print("Model not found. Training a new model on MNIST (this may take a few minutes)...")
+        import train_model
+
+        train_model.main()
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+    model.eval()
+    return model
 
 
 class DigitRecognitionApp:
@@ -102,9 +85,13 @@ class DigitRecognitionApp:
         img_array = np.array(img).astype("float32")
         img_array = 255 - img_array  # invert: white background -> black background
         img_array = img_array / 255.0
-        img_array = img_array.reshape(1, 28, 28, 1)
 
-        predictions = self.model.predict(img_array, verbose=0)[0]
+        img_tensor = torch.from_numpy(img_array).unsqueeze(0).unsqueeze(0)
+
+        with torch.no_grad():
+            logits = self.model(img_tensor)[0]
+            predictions = torch.softmax(logits, dim=0).numpy()
+
         digit = int(np.argmax(predictions))
         confidence = float(predictions[digit]) * 100
 

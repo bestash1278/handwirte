@@ -53,6 +53,9 @@ Thumbs.db
 # Models (optional - 첫 학습 후에는 제외 가능)
 # models/
 
+# Raw MNIST download cache
+mnist_data/
+
 # Environment variables
 .env
 .env.local
