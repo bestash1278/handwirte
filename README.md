@@ -1,6 +1,8 @@
 # 손글자 숫자 인식 프로그램 ✍️
 
-마우스로 그린 손글자 숫자를 AI가 인식하는 웹 애플리케이션입니다.
+마우스로 그린 손글자 숫자를 AI가 인식하는 프로그램입니다. 웹(Streamlit) 버전과 데스크톱(Tkinter) 버전 두 가지를 제공합니다.
+
+## 웹 버전 (기본)
 
 ## 기능
 
@@ -57,24 +59,47 @@ streamlit run app.py
 - **입력**: 28×28 그레이스케일 이미지
 - **출력**: 0-9 숫자 분류
 
-## 프로젝트 구조
-
-```
-handwriting-recognition/
-├── app.py                # Streamlit 웹 애플리케이션
-├── train_model.py        # 모델 학습 스크립트
-├── requirements.txt      # Python 라이브러리 의존성
-├── .gitignore           # Git 제외 파일
-├── README.md            # 이 파일
-└── models/
-    └── mnist_model.h5   # 학습된 모델 (자동 생성)
-```
-
 ## 팁
 
 - 숫자를 크게 그릴수록 인식 정확도가 높습니다
 - 캔버스 중앙에 그리는 것이 좋습니다
 - 느릿한 동작으로 명확하게 그려보세요
+
+## 데스크톱 버전 (Tkinter)
+
+인터넷 없이 실행되는 윈도우 데스크톱 앱입니다. `desktop_version/` 폴더에 있습니다.
+
+### 설치 및 실행
+
+```bash
+cd desktop_version
+pip install -r requirements.txt
+python digit_recognition.py
+```
+
+또는 윈도우에서 `install_requirements.bat`을 먼저 실행해 라이브러리를 설치하고, `run_digit_recognition.bat`으로 앱을 실행할 수 있습니다.
+
+- 학습된 모델(`models/mnist_model.h5`)이 없으면 첫 실행 시 자동으로 MNIST 데이터로 학습합니다 (몇 분 소요)
+- 캔버스에 마우스로 숫자를 그린 뒤 **Recognize** 버튼을 누르면 예측 숫자와 신뢰도가 표시됩니다
+- **Clear** 버튼으로 캔버스를 지울 수 있습니다
+
+## 프로젝트 구조
+
+```
+handwriting-recognition/
+├── app.py                       # Streamlit 웹 애플리케이션
+├── train_model.py               # 모델 학습 스크립트
+├── requirements.txt             # Python 라이브러리 의존성 (웹 버전)
+├── .gitignore                   # Git 제외 파일
+├── README.md                    # 이 파일
+├── models/
+│   └── mnist_model.h5          # 학습된 모델 (자동 생성, 웹/데스크톱 공용)
+└── desktop_version/
+    ├── digit_recognition.py    # Tkinter 데스크톱 앱
+    ├── requirements.txt        # Python 라이브러리 의존성 (데스크톱 버전)
+    ├── install_requirements.bat
+    └── run_digit_recognition.bat
+```
 
 ## 라이선스
 
@@ -82,4 +107,4 @@ MIT License
 
 ## 작성자
 
-Claude AI with Streamlit
+Claude AI

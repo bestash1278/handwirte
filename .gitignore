@@ -56,3 +56,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Reference materials (not part of the source project)
+*.pdf
