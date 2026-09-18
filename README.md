@@ -7,13 +7,13 @@
 ## 기능
 
 - 🎨 **마우스로 그리기**: 웹 캔버스에서 손글자로 숫자 작성
-- 🤖 **AI 인식**: TensorFlow 기반 MNIST 모델로 실시간 인식
+- 🤖 **AI 인식**: PyTorch 기반 MNIST 모델로 실시간 인식
 - 📊 **신뢰도 표시**: 각 숫자별 확률을 시각화
 
 ## 기술 스택
 
 - **프론트엔드**: Streamlit + Drawable Canvas
-- **백엔드**: Python + TensorFlow/Keras
+- **백엔드**: Python + PyTorch
 - **모델**: CNN (Convolutional Neural Network)
 - **데이터셋**: MNIST (70,000개의 손글자 숫자 이미지)
 
@@ -34,9 +34,9 @@ pip install -r requirements.txt
 ```bash
 python train_model.py
 ```
-- 약 5-10분 소요
+- 약 5-10분 소요 (이미 `models/mnist_model.pt`가 저장소에 포함되어 있어 생략 가능)
 - MNIST 데이터셋을 다운로드하고 학습합니다
-- 학습된 모델은 `models/mnist_model.h5`에 저장됩니다
+- 학습된 모델은 `models/mnist_model.pt`에 저장됩니다
 
 ### 4. 웹 앱 실행
 ```bash
@@ -79,7 +79,7 @@ python digit_recognition.py
 
 또는 윈도우에서 `install_requirements.bat`을 먼저 실행해 라이브러리를 설치하고, `run_digit_recognition.bat`으로 앱을 실행할 수 있습니다.
 
-- 학습된 모델(`models/mnist_model.h5`)이 없으면 첫 실행 시 자동으로 MNIST 데이터로 학습합니다 (몇 분 소요)
+- 학습된 모델(`models/mnist_model.pt`)이 없으면 첫 실행 시 자동으로 MNIST 데이터로 학습합니다 (몇 분 소요)
 - 캔버스에 마우스로 숫자를 그린 뒤 **Recognize** 버튼을 누르면 예측 숫자와 신뢰도가 표시됩니다
 - **Clear** 버튼으로 캔버스를 지울 수 있습니다
 
@@ -93,7 +93,7 @@ handwriting-recognition/
 ├── .gitignore                   # Git 제외 파일
 ├── README.md                    # 이 파일
 ├── models/
-│   └── mnist_model.h5          # 학습된 모델 (자동 생성, 웹/데스크톱 공용)
+│   └── mnist_model.pt          # 학습된 모델 (저장소에 포함, 웹/데스크톱 공용)
 └── desktop_version/
     ├── digit_recognition.py    # Tkinter 데스크톱 앱
     ├── requirements.txt        # Python 라이브러리 의존성 (데스크톱 버전)
