@@ -1,6 +1,4 @@
-streamlit
-streamlit-drawable-canvas==0.9.3
-torch
-numpy
-pillow
-opencv-python
+# Created 2026-09-21 KST. Tested with Python 3.14.
+torch==2.14.0
+numpy==2.5.3
+Pillow==12.3.0

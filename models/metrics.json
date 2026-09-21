@@ -1,0 +1,9 @@
+{
+  "test_accuracy": 0.9904,
+  "test_correct": 9904,
+  "test_samples": 10000,
+  "train_samples": 60000,
+  "epochs": 5,
+  "seed": 42,
+  "torch_version": "2.14.0+cpu"
+}

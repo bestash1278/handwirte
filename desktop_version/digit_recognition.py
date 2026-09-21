@@ -1,115 +1,100 @@
-"""
-Handwritten Digit Recognition - Desktop Version (Tkinter)
-Draw a digit (0-9) with the mouse and click Recognize.
-"""
-
-import os
+"""Desktop drawing application. Created 2026-09-21 KST."""
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tkinter as tk
-from tkinter import messagebox
-
-import numpy as np
-import torch
-import torch.nn as nn
+from tkinter import messagebox, ttk
 from PIL import Image, ImageDraw
+from recognition import Recognizer
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from train_model import DigitCNN  # noqa: E402
-
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "mnist_model.pt")
-CANVAS_SIZE = 280
-BRUSH_SIZE = 18
-
-
-def load_or_train_model():
-    model = DigitCNN()
-    if os.path.exists(MODEL_PATH):
-        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
-    else:
-        print("Model not found. Training a new model on MNIST (this may take a few minutes)...")
-        import train_model
-
-        train_model.main()
-        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
-    model.eval()
-    return model
-
-
-class DigitRecognitionApp:
-    def __init__(self, root, model):
+class DigitApp:
+    def __init__(self, root):
         self.root = root
-        self.model = model
-        self.root.title("Handwritten Digit Recognition")
-        self.root.resizable(False, False)
+        self.recognizer = Recognizer()
+        root.title('MNIST | Handwritten Digit Studio')
+        root.resizable(False, False)
+        root.configure(bg='#eef2f7')
+        frame = ttk.Frame(root, padding=28)
+        frame.pack()
+        ttk.Label(frame, text='Handwritten Digit Studio', font=('Segoe UI', 22, 'bold')).pack(anchor='w')
+        ttk.Label(frame, text='Draw one digit from 0 to 9. Then click Recognize.').pack(anchor='w', pady=(8, 18))
+        self.canvas = tk.Canvas(frame, width=320, height=320, bg='white', highlightthickness=1, highlightbackground='#b7c5da')
+        self.canvas.pack()
+        self.canvas.bind('<Button-1>', self.start)
+        self.canvas.bind('<B1-Motion>', self.draw)
+        self.canvas.bind('<ButtonRelease-1>', self.finish)
+        controls = ttk.Frame(frame)
+        controls.pack(fill='x', pady=16)
+        ttk.Button(controls, text='Clear', command=self.clear).pack(side='left')
+        ttk.Button(controls, text='Recognize', command=self.recognize).pack(side='right')
+        self.live = tk.BooleanVar(value=True)
+        ttk.Checkbutton(controls, text='Auto recognize', variable=self.live).pack(side='left', padx=12)
+        self.result = ttk.Label(frame, text='', font=('Segoe UI', 18, 'bold'))
+        self.result.pack(pady=6)
+        self.details = ttk.Label(frame, text='')
+        self.details.pack()
+        ttk.Label(frame, text='Confidence is a model score, not a guarantee.').pack(pady=(14, 0))
+        self.pending = None
+        self.last = None
+        self.clear()
 
-        self.canvas = tk.Canvas(
-            root, width=CANVAS_SIZE, height=CANVAS_SIZE, bg="white", cursor="cross"
-        )
-        self.canvas.grid(row=0, column=0, columnspan=2, padx=10, pady=10)
+    def clear(self):
+        if self.pending:
+            self.root.after_cancel(self.pending)
+            self.pending = None
+        self.canvas.delete('all')
+        self.image = Image.new('L', (320, 320), 255)
+        self.pen = ImageDraw.Draw(self.image)
+        self.last = None
+        self.result.config(text='Ready to draw')
+        self.details.config(text='')
 
-        self.image = Image.new("L", (CANVAS_SIZE, CANVAS_SIZE), color=255)
-        self.draw = ImageDraw.Draw(self.image)
+    def start(self, event):
+        if self.pending:
+            self.root.after_cancel(self.pending)
+            self.pending = None
+        self.last = (event.x, event.y)
+        self.draw(event)
 
-        self.canvas.bind("<B1-Motion>", self.paint)
-        self.canvas.bind("<ButtonRelease-1>", lambda event: None)
+    def draw(self, event):
+        if self.last is None:
+            return
+        x, y = max(0, min(319, event.x)), max(0, min(319, event.y))
+        self.canvas.create_line(*self.last, x, y, width=20, fill='#111111', capstyle=tk.ROUND, smooth=True)
+        self.canvas.create_oval(x-10, y-10, x+10, y+10, fill='#111111', outline='')
+        self.pen.line([self.last, (x, y)], fill=17, width=20)
+        self.pen.ellipse((x-10, y-10, x+10, y+10), fill=17)
+        self.last = (x, y)
+        self.result.config(text='Drawing...')
+        self.details.config(text='')
 
-        self.clear_button = tk.Button(root, text="Clear", width=12, command=self.clear_canvas)
-        self.clear_button.grid(row=1, column=0, padx=10, pady=5)
+    def finish(self, event):
+        self.last = None
+        if self.live.get():
+            self.pending = self.root.after(350, self.recognize)
 
-        self.recognize_button = tk.Button(
-            root, text="Recognize", width=12, command=self.recognize_digit
-        )
-        self.recognize_button.grid(row=1, column=1, padx=10, pady=5)
-
-        self.result_label = tk.Label(root, text="Predicted Digit: -", font=("Helvetica", 16))
-        self.result_label.grid(row=2, column=0, columnspan=2, pady=(10, 0))
-
-        self.confidence_label = tk.Label(root, text="Confidence: -", font=("Helvetica", 12))
-        self.confidence_label.grid(row=3, column=0, columnspan=2, pady=(0, 10))
-
-    def paint(self, event):
-        x, y = event.x, event.y
-        r = BRUSH_SIZE // 2
-        self.canvas.create_oval(x - r, y - r, x + r, y + r, fill="black", outline="black")
-        self.draw.ellipse([x - r, y - r, x + r, y + r], fill=0)
-
-    def clear_canvas(self):
-        self.canvas.delete("all")
-        self.image = Image.new("L", (CANVAS_SIZE, CANVAS_SIZE), color=255)
-        self.draw = ImageDraw.Draw(self.image)
-        self.result_label.config(text="Predicted Digit: -")
-        self.confidence_label.config(text="Confidence: -")
-
-    def recognize_digit(self):
-        img = self.image.resize((28, 28))
-        img_array = np.array(img).astype("float32")
-        img_array = 255 - img_array  # invert: white background -> black background
-        img_array = img_array / 255.0
-
-        img_tensor = torch.from_numpy(img_array).unsqueeze(0).unsqueeze(0)
-
-        with torch.no_grad():
-            logits = self.model(img_tensor)[0]
-            predictions = torch.softmax(logits, dim=0).numpy()
-
-        digit = int(np.argmax(predictions))
-        confidence = float(predictions[digit]) * 100
-
-        self.result_label.config(text=f"Predicted Digit: {digit}")
-        self.confidence_label.config(text=f"Confidence: {confidence:.2f}%")
-
+    def recognize(self):
+        if self.pending:
+            self.root.after_cancel(self.pending)
+            self.pending = None
+        try:
+            result = self.recognizer.predict(self.image)
+            self.result.config(text=f"Digit {result['digit']}   |   {result['confidence']:.1%}")
+            top = sorted(enumerate(result['probabilities']), key=lambda p: p[1], reverse=True)[:3]
+            self.details.config(text='   '.join(f'{digit}: {score:.1%}' for digit, score in top))
+        except ValueError as exc:
+            self.result.config(text=str(exc))
 
 def main():
-    try:
-        model = load_or_train_model()
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to load or train model:\n{e}")
-        return
-
     root = tk.Tk()
-    DigitRecognitionApp(root, model)
+    try:
+        DigitApp(root)
+    except Exception as exc:
+        root.withdraw()
+        messagebox.showerror('Startup error', str(exc))
+        root.destroy()
+        return
     root.mainloop()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

@@ -1,124 +1,76 @@
-import os
-import struct
+"""Download MNIST, train on 60,000 images, evaluate on 10,000. Created 2026-09-21 KST."""
+import argparse
 import gzip
+import hashlib
+import json
 import urllib.request
-
 import numpy as np
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+from recognition import DigitNet, ROOT, MODEL_PATH
 
-os.makedirs("models", exist_ok=True)
-
-MNIST_URLS = {
-    "train_images": "https://ossci-datasets.s3.amazonaws.com/mnist/train-images-idx3-ubyte.gz",
-    "train_labels": "https://ossci-datasets.s3.amazonaws.com/mnist/train-labels-idx1-ubyte.gz",
-    "test_images": "https://ossci-datasets.s3.amazonaws.com/mnist/t10k-images-idx3-ubyte.gz",
-    "test_labels": "https://ossci-datasets.s3.amazonaws.com/mnist/t10k-labels-idx1-ubyte.gz",
+FILES = {
+    'train-images-idx3-ubyte.gz': 'f68b3c2dcbeaaa9fbdd348bbdeb94873',
+    'train-labels-idx1-ubyte.gz': 'd53e105ee54ea40749a09fcbcd1e9432',
+    't10k-images-idx3-ubyte.gz': '9fb629c4189551a2d022fa330f9573f3',
+    't10k-labels-idx1-ubyte.gz': 'ec29112dd5afa0611ce80d1b7f02629c',
 }
-DATA_DIR = "mnist_data"
 
-
-def download_mnist():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    for name, url in MNIST_URLS.items():
-        path = os.path.join(DATA_DIR, f"{name}.gz")
-        if not os.path.exists(path):
-            print(f"{name} 다운로드 중...")
-            urllib.request.urlretrieve(url, path)
-
-
-def load_images(path):
-    with gzip.open(path, "rb") as f:
-        _, num, rows, cols = struct.unpack(">IIII", f.read(16))
-        data = np.frombuffer(f.read(), dtype=np.uint8)
-        return data.reshape(num, rows, cols)
-
-
-def load_labels(path):
-    with gzip.open(path, "rb") as f:
-        _, num = struct.unpack(">II", f.read(8))
-        return np.frombuffer(f.read(), dtype=np.uint8)
-
-
-class DigitCNN(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.dropout = nn.Dropout(0.5)
-        self.fc = nn.Linear(64 * 5 * 5, 10)
-
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = self.pool(torch.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        return self.fc(x)
-
+def load_data(split):
+    arrays = []
+    for kind in ('images-idx3', 'labels-idx1'):
+        name = f'{split}-{kind}-ubyte.gz'
+        path = ROOT / 'data' / name
+        path.parent.mkdir(exist_ok=True)
+        if not path.exists():
+            print(f'Downloading {name}...', flush=True)
+            with urllib.request.urlopen('https://storage.googleapis.com/cvdf-datasets/mnist/' + name, timeout=60) as response:
+                content = response.read()
+            if hashlib.md5(content).hexdigest() != FILES[name]:
+                raise ValueError(f'Invalid download: {name}')
+            path.write_bytes(content)
+        if hashlib.md5(path.read_bytes()).hexdigest() != FILES[name]:
+            raise ValueError(f'Corrupt dataset: {path}. Remove it and retry.')
+        raw = gzip.decompress(path.read_bytes())
+        arrays.append(np.frombuffer(raw, dtype=np.uint8, offset=16 if kind.startswith('images') else 8).copy())
+    return TensorDataset(torch.from_numpy(arrays[0].reshape(-1, 1, 28, 28)).float() / 255,
+                         torch.from_numpy(arrays[1]).long())
 
 def main():
-    print("MNIST 데이터셋 다운로드 및 로드 중...")
-    download_mnist()
-
-    x_train = load_images(os.path.join(DATA_DIR, "train_images.gz")).astype("float32") / 255.0
-    y_train = load_labels(os.path.join(DATA_DIR, "train_labels.gz")).astype("int64")
-    x_test = load_images(os.path.join(DATA_DIR, "test_images.gz")).astype("float32") / 255.0
-    y_test = load_labels(os.path.join(DATA_DIR, "test_labels.gz")).astype("int64")
-
-    print(f"훈련 데이터: {x_train.shape}")
-    print(f"테스트 데이터: {x_test.shape}")
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"사용 장치: {device}")
-
-    x_train_t = torch.from_numpy(x_train).unsqueeze(1)
-    y_train_t = torch.from_numpy(y_train)
-    x_test_t = torch.from_numpy(x_test).unsqueeze(1).to(device)
-    y_test_t = torch.from_numpy(y_test).to(device)
-
-    train_loader = DataLoader(
-        TensorDataset(x_train_t, y_train_t), batch_size=128, shuffle=True
-    )
-
-    model = DigitCNN().to(device)
-    optimizer = torch.optim.Adam(model.parameters())
-    criterion = nn.CrossEntropyLoss()
-
-    print("\n모델 학습 중...")
-    epochs = 10
-    for epoch in range(epochs):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--epochs', type=int, default=5)
+    args = parser.parse_args()
+    if args.epochs < 1:
+        parser.error('--epochs must be positive')
+    torch.manual_seed(42)
+    train = DataLoader(load_data('train'), batch_size=128, shuffle=True)
+    test = DataLoader(load_data('t10k'), batch_size=256)
+    model = DigitNet()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    for epoch in range(args.epochs):
         model.train()
-        total_loss, correct, total = 0.0, 0, 0
-        for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
-
+        total_loss = 0
+        for images, labels in train:
             optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            loss = torch.nn.functional.cross_entropy(model(images), labels)
             loss.backward()
             optimizer.step()
-
-            total_loss += loss.item() * images.size(0)
-            correct += (outputs.argmax(1) == labels).sum().item()
-            total += images.size(0)
-
-        print(
-            f"Epoch {epoch + 1}/{epochs} - loss: {total_loss / total:.4f} - "
-            f"accuracy: {correct / total:.4f}"
-        )
-
-    print("\n모델 평가 중...")
+            total_loss += loss.item() * len(labels)
+        print(f'Epoch {epoch + 1}/{args.epochs}: loss={total_loss / len(train.dataset):.4f}', flush=True)
     model.eval()
-    with torch.no_grad():
-        outputs = model(x_test_t)
-        test_accuracy = (outputs.argmax(1) == y_test_t).float().mean().item()
-    print(f"테스트 정확도: {test_accuracy * 100:.2f}%")
+    correct = 0
+    with torch.inference_mode():
+        for images, labels in test:
+            correct += (model(images).argmax(1) == labels).sum().item()
+    metrics = {'test_accuracy': correct / len(test.dataset), 'test_correct': correct,
+               'test_samples': len(test.dataset), 'train_samples': len(train.dataset),
+               'epochs': args.epochs, 'seed': 42, 'torch_version': torch.__version__}
+    MODEL_PATH.parent.mkdir(exist_ok=True)
+    temporary = MODEL_PATH.with_suffix('.tmp')
+    torch.save(model.state_dict(), temporary)
+    temporary.replace(MODEL_PATH)
+    (MODEL_PATH.parent / 'metrics.json').write_text(json.dumps(metrics, indent=2), encoding='utf-8')
+    print(json.dumps(metrics, indent=2), flush=True)
 
-    torch.save(model.state_dict(), "models/mnist_model.pt")
-    print("\n모델이 models/mnist_model.pt에 저장되었습니다.")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
